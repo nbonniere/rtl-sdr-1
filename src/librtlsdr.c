@@ -61,9 +61,12 @@ typedef struct rtlsdr_tuner_iface {
 	int (*exit)(void *);
 	int (*set_freq)(void *, uint32_t freq /* Hz */);
 	int (*set_bw)(void *, int bw /* Hz */);
+//	int (*set_bw)(void *, uint32_t bw /* Hz */);
 	int (*set_gain)(void *, int gain /* tenth dB */);
 	int (*set_if_gain)(void *, int stage, int gain /* tenth dB */);
 	int (*set_gain_mode)(void *, int manual);
+	int (*set_if_freq)(void *, uint32_t freq /* Hz */);
+    int (*set_if_bw_regs)(void *, uint8_t reg_0a, uint8_t reg_0b) ;
 } rtlsdr_tuner_iface_t;
 
 enum rtlsdr_async_status {
@@ -127,7 +130,7 @@ struct rtlsdr_dev {
 };
 
 void rtlsdr_set_gpio_bit(rtlsdr_dev_t *dev, uint8_t gpio, int val);
-static int rtlsdr_set_if_freq(rtlsdr_dev_t *dev, uint32_t freq);
+/*static*/ int rtlsdr_set_if_freq(rtlsdr_dev_t *dev, uint32_t freq);
 
 /* generic tuner interface functions, shall be moved to the tuner implementations */
 int e4000_init(void *dev) {
@@ -242,10 +245,11 @@ int r820t_set_freq(void *dev, uint32_t freq) {
 }
 
 int r820t_set_bw(void *dev, int bw) {
+//int r820t_set_bw(void *dev, uint32_t bw) {
 	int r;
 	rtlsdr_dev_t* devt = (rtlsdr_dev_t*)dev;
 
-	r = r82xx_set_bandwidth(&devt->r82xx_p, bw, devt->rate);
+	r = r82xx_set_bandwidth(&devt->r82xx_p, bw);
 	if(r < 0)
 		return r;
 	r = rtlsdr_set_if_freq(devt, r);
@@ -254,49 +258,60 @@ int r820t_set_bw(void *dev, int bw) {
 	return rtlsdr_set_center_freq(devt, devt->freq);
 }
 
+int r820t_set_if_bw_regs(void *dev, uint8_t reg_0a, uint8_t reg_0b) {
+	rtlsdr_dev_t* devt = (rtlsdr_dev_t*)dev;
+	return r82xx_set_if_bw_regs(&devt->r82xx_p, reg_0a, reg_0b);
+}
+
+int r820t_set_if_freq(void *dev, uint32_t freq) {
+	rtlsdr_dev_t* devt = (rtlsdr_dev_t*)dev;
+	return r82xx_set_if_freq(&devt->r82xx_p, freq);
+}
+
 int r820t_set_gain(void *dev, int gain) {
 	rtlsdr_dev_t* devt = (rtlsdr_dev_t*)dev;
-	return r82xx_set_gain(&devt->r82xx_p, 1, gain);
+	return r82xx_set_gain(&devt->r82xx_p, gain);
 }
+
 int r820t_set_gain_mode(void *dev, int manual) {
 	rtlsdr_dev_t* devt = (rtlsdr_dev_t*)dev;
-	return r82xx_set_gain(&devt->r82xx_p, manual, 0);
+	return r82xx_enable_manual_gain(&devt->r82xx_p, manual);
 }
 
 /* definition order must match enum rtlsdr_tuner */
 static rtlsdr_tuner_iface_t tuners[] = {
 	{
-		NULL, NULL, NULL, NULL, NULL, NULL, NULL /* dummy for unknown tuners */
+		NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL /* dummy for unknown tuners */
 	},
 	{
 		e4000_init, e4000_exit,
 		e4000_set_freq, e4000_set_bw, e4000_set_gain, e4000_set_if_gain,
-		e4000_set_gain_mode
+		e4000_set_gain_mode, NULL, NULL
 	},
 	{
 		_fc0012_init, fc0012_exit,
 		fc0012_set_freq, fc0012_set_bw, _fc0012_set_gain, NULL,
-		fc0012_set_gain_mode
+		fc0012_set_gain_mode, NULL, NULL
 	},
 	{
 		_fc0013_init, fc0013_exit,
 		fc0013_set_freq, fc0013_set_bw, _fc0013_set_gain, NULL,
-		fc0013_set_gain_mode
+		fc0013_set_gain_mode, NULL, NULL
 	},
 	{
 		fc2580_init, fc2580_exit,
 		_fc2580_set_freq, fc2580_set_bw, fc2580_set_gain, NULL,
-		fc2580_set_gain_mode
+		fc2580_set_gain_mode, NULL, NULL
 	},
 	{
 		r820t_init, r820t_exit,
 		r820t_set_freq, r820t_set_bw, r820t_set_gain, NULL,
-		r820t_set_gain_mode
+		r820t_set_gain_mode, r820t_set_if_freq, r820t_set_if_bw_regs
 	},
 	{
 		r820t_init, r820t_exit,
 		r820t_set_freq, r820t_set_bw, r820t_set_gain, NULL,
-		r820t_set_gain_mode
+		r820t_set_gain_mode, r820t_set_if_freq, r820t_set_if_bw_regs
 	},
 };
 
@@ -686,7 +701,17 @@ int rtlsdr_deinit_baseband(rtlsdr_dev_t *dev)
 	return r;
 }
 
-static int rtlsdr_set_if_freq(rtlsdr_dev_t *dev, uint32_t freq)
+int rtlsdr_set_if_bw_regs(rtlsdr_dev_t *dev, uint8_t reg_0a, uint8_t reg_0b) 
+{
+	int r;
+	
+	rtlsdr_set_i2c_repeater(dev, 1);
+	r = dev->tuner->set_if_bw_regs(dev, reg_0a, reg_0b);
+	rtlsdr_set_i2c_repeater(dev, 0);
+	return r;
+}
+
+int rtlsdr_set_if_freq(rtlsdr_dev_t *dev, uint32_t freq)
 {
 	uint32_t rtl_xtal;
 	int32_t if_freq;
@@ -709,8 +734,15 @@ static int rtlsdr_set_if_freq(rtlsdr_dev_t *dev, uint32_t freq)
 	tmp = if_freq & 0xff;
 	r |= rtlsdr_demod_write_reg(dev, 1, 0x1b, tmp, 1);
 
+	/* Tell the R820T driver which IF frequency we are currently using
+	 * so that it can choose the optimal IF filter settings.
+	 * Works for normal tuning as well as no-mod direct sampling! */
+//	if(dev->tuner_initialized && dev->tuner && dev->tuner->set_if_freq) {
+	if(dev->tuner && dev->tuner->set_if_freq) {
+		dev->tuner->set_if_freq(dev, freq);
+	}
 	return r;
-}
+} 
 
 int rtlsdr_set_sample_freq_correction(rtlsdr_dev_t *dev, int ppm)
 {
@@ -966,10 +998,6 @@ int rtlsdr_get_tuner_gains(rtlsdr_dev_t *dev, int *gains)
 				       63, 65, 67, 68, 70, 71, 179, 181, 182,
 				       184, 186, 188, 191, 197 };
 	const int fc2580_gains[] = { 0 /* no gain values */ };
-	const int r82xx_gains[] = { 0, 9, 14, 27, 37, 77, 87, 125, 144, 157,
-				     166, 197, 207, 229, 254, 280, 297, 328,
-				     338, 364, 372, 386, 402, 421, 434, 439,
-				     445, 480, 496 };
 	const int unknown_gains[] = { 0 /* no gain values */ };
 
 	const int *ptr = NULL;
@@ -993,7 +1021,7 @@ int rtlsdr_get_tuner_gains(rtlsdr_dev_t *dev, int *gains)
 		break;
 	case RTLSDR_TUNER_R820T:
 	case RTLSDR_TUNER_R828D:
-		ptr = r82xx_gains; len = sizeof(r82xx_gains);
+		r82xx_get_tuner_gains(&dev->r82xx_p, &ptr, &len);
 		break;
 	default:
 		ptr = unknown_gains; len = sizeof(unknown_gains);
@@ -1071,6 +1099,59 @@ int rtlsdr_set_tuner_if_gain(rtlsdr_dev_t *dev, int stage, int gain)
 	}
 
 	return r;
+}
+
+int rtlsdr_get_tuner_stage_gains(rtlsdr_dev_t *dev, uint8_t stage, int32_t *gains, char *description)
+{
+	const int32_t *gainptr = NULL;
+	const char *desc;
+	int len = 0;
+	rtlsdr_dev_t* devt = (rtlsdr_dev_t*)dev;
+
+	if (!dev)
+		return -1;
+
+	switch (dev->tuner_type) {
+	case RTLSDR_TUNER_R820T:
+	case RTLSDR_TUNER_R828D:
+		len = r82xx_get_tuner_stage_gains(&devt->r82xx_p, stage, &gainptr, &desc);
+		break;
+	default:
+		return -1;
+	}
+
+	if (description) {
+		strncpy(description, desc, DESCRIPTION_MAXLEN-1);
+		description[DESCRIPTION_MAXLEN-1] = 0;
+	}
+
+	if (!gains) { /* no buffer provided, just return the count */
+		return len;
+	} else {
+		if (len)
+			memcpy(gains, gainptr, len*sizeof(*gains));
+		return len;
+	}
+}
+
+int rtlsdr_set_tuner_stage_gain(rtlsdr_dev_t *dev, uint8_t stage, int32_t gain)
+{
+	int rc;
+	rtlsdr_dev_t* devt = (rtlsdr_dev_t*)dev;
+
+	if (!dev)
+		return -1;
+	rtlsdr_set_i2c_repeater(dev, 1);
+	switch (dev->tuner_type) {
+		case RTLSDR_TUNER_R820T:
+		case RTLSDR_TUNER_R828D:
+			rc = r82xx_set_tuner_stage_gain(&devt->r82xx_p, stage, gain);
+			break;
+		default:
+			rc = -1;
+	}
+	rtlsdr_set_i2c_repeater(dev, 0);
+	return rc;
 }
 
 int rtlsdr_set_tuner_gain_mode(rtlsdr_dev_t *dev, int mode)
