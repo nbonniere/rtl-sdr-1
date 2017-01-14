@@ -64,6 +64,8 @@ RTLSDR_API int rtlsdr_open(rtlsdr_dev_t **dev, uint32_t index);
 
 RTLSDR_API int rtlsdr_close(rtlsdr_dev_t *dev);
 
+RTLSDR_API int rtlsdr_close_bt(rtlsdr_dev_t *dev);
+
 /* configuration functions */
 
 /*!
@@ -141,6 +143,10 @@ RTLSDR_API int rtlsdr_write_eeprom(rtlsdr_dev_t *dev, uint8_t *data,
 
 RTLSDR_API int rtlsdr_read_eeprom(rtlsdr_dev_t *dev, uint8_t *data,
 				  uint8_t offset, uint16_t len);
+
+RTLSDR_API int rtlsdr_set_if_freq(rtlsdr_dev_t *dev, uint32_t freq);
+
+RTLSDR_API int rtlsdr_set_bw_regs(rtlsdr_dev_t *dev, uint8_t reg_0a, uint8_t reg_0b);
 
 RTLSDR_API int rtlsdr_set_center_freq(rtlsdr_dev_t *dev, uint32_t freq);
 
@@ -243,12 +249,51 @@ RTLSDR_API int rtlsdr_get_tuner_gain(rtlsdr_dev_t *dev);
 RTLSDR_API int rtlsdr_set_tuner_if_gain(rtlsdr_dev_t *dev, int stage, int gain);
 
 /*!
+ * Get a list of gains and description of the gain stages supported by the tuner.
+ * NOTE: The gains argument must be preallocated by the caller. If NULL is
+ * being given instead, the number of available gain settings will be returned.
+ *
+ * \param dev the device handle given by rtlsdr_open()
+ * \param stage the stage to get the array of gain settings. If no such
+ *   stage exists, return error
+ * \gains array to hold the different gain settings for this stage
+ *   - use NULL to get the size of the array returned by the function
+ * \param description the textual description of the respective stage
+ *   is copied into this string (description max. 256 chars)
+ *   Optional: can be NULL
+ * \return <= 0 on error, number of available (returned) gain values otherwise
+ * \def DESCRIPTION_MAXLEN description max. 256 chars
+ */
+#define DESCRIPTION_MAXLEN 256
+RTLSDR_API int rtlsdr_get_tuner_stage_gains(rtlsdr_dev_t *dev, uint8_t stage, int32_t *gains, char *description);
+
+/*!
+ * Set the gain of a stage in the tuner
+ *
+ * \param dev the device handle given by rtlsdr_open()
+ * \param stage the stage to set gain for
+ * \param in tenths of a dB, e.g. -30 means -3.0 dB.
+ * \return <= 0 on error, 0 on success
+ */
+RTLSDR_API int rtlsdr_set_tuner_stage_gain(rtlsdr_dev_t *dev, uint8_t stage, int32_t gain);
+
+enum rtl_sdr_gain_mode {
+	GAIN_MODE_AGC=0,
+	GAIN_MODE_MANUAL=1,
+	GAIN_MODE_LINEARITY=2,
+	GAIN_MODE_SENSITIVITY=3
+};
+
+/*!
  * Set the gain mode (automatic/manual) for the device.
  * Manual gain mode must be enabled for the gain setter function to work.
  *
+* Advanced gain modes can be enabled. If not implemented, the mode with
+ * the highest number will be set
  * \param dev the device handle given by rtlsdr_open()
  * \param manual gain mode, 1 means manual gain mode shall be enabled.
- * \return 0 on success
+ * \return <= 0 on error, 0 on success for GAIN_MODE_AGC and GAIN_MODE_MANUAL (compatiblity),
+ * \return the mode supplied on success or the highest mode supported
  */
 RTLSDR_API int rtlsdr_set_tuner_gain_mode(rtlsdr_dev_t *dev, int manual);
 
