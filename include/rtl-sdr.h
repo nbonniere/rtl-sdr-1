@@ -64,8 +64,6 @@ RTLSDR_API int rtlsdr_open(rtlsdr_dev_t **dev, uint32_t index);
 
 RTLSDR_API int rtlsdr_close(rtlsdr_dev_t *dev);
 
-RTLSDR_API int rtlsdr_close_bt(rtlsdr_dev_t *dev);
-
 /* configuration functions */
 
 /*!
@@ -357,6 +355,11 @@ RTLSDR_API int rtlsdr_set_direct_sampling(rtlsdr_dev_t *dev, int on);
  *	    2 Q-ADC input enabled
  */
 RTLSDR_API int rtlsdr_get_direct_sampling(rtlsdr_dev_t *dev);
+
+/*!
+ * Enable or disable the bias tee on GPIO PIN 0.
+ */
+RTLSDR_API int rtlsdr_set_bias_tee(rtlsdr_dev_t *dev, int on);
 
 /*!
  * Enable or disable offset tuning for zero-IF tuners, which allows to avoid
